@@ -24,15 +24,20 @@ import java.util.function.Predicate;
 public class DirBox {
 
 	private final Path path;
+	private int maxDepth;
 	private Predicate<String> predicate;
 	private String pattern;
 	private Type type;
-	private int maxDepth;
 	private boolean keepStructure;
 
 	public DirBox(Path path) {
 		check();
 		this.path = path;
+		this.maxDepth = Integer.MAX_VALUE;
+		this.predicate = null;
+		this.pattern = null;
+		this.type = Type.FILE;
+		this.keepStructure = true;
 	}
 
 	/**
@@ -46,18 +51,6 @@ public class DirBox {
 	}
 
 	/**
-	 * Deletes all files in a folder and its sub-folders. <br>
-	 * Leave the folder structure intact.<br>
-	 * If initial folder does not exist nothing is done
-	 * TODO utiliser DeleteVisitor au lieu de CleanVisitor
-	 *
-	 * @throws IOException
-	 */
-	public void clean() throws IOException {
-		Files.walkFileTree(this.path, new CleanVisitor());
-	}
-
-	/**
 	 * Copies the folder structure and all files to a folder, without depth restriction.
 	 *
 	 * @param to
@@ -65,57 +58,24 @@ public class DirBox {
 	 */
 	public void copy(Path to) throws IOException {
 		CopyVisitor copyVisitor = new CopyVisitor(this.path, to);
-		Files.walkFileTree(this.path, copyVisitor);
+		copyVisitor.setPredicate(this.predicate);
+		copyVisitor.setPattern(this.pattern);
+		copyVisitor.setKeepStructure(this.keepStructure);
+
+		Files.walkFileTree(this.path, EnumSet.of(FileVisitOption.FOLLOW_LINKS), this.maxDepth, copyVisitor);
 	}
 
 	/**
-	 * Copies all files to a folder, without depth restriction.
-	 * if keepStructure is set to true, the folder structure is kept.
+	 * Moves a folder, all its sub-folders and files into a new folder
 	 *
 	 * @param to
 	 * @throws IOException
 	 */
-	public void copy(Path to, boolean keepStructure) throws IOException {
-		CopyVisitor copyVisitor = new CopyVisitor(this.path, to);
-		copyVisitor.setKeepStructure(keepStructure);
-
-		Files.walkFileTree(this.path, EnumSet.of(FileVisitOption.FOLLOW_LINKS), Integer.MAX_VALUE, copyVisitor);
+	public void move(Path to) throws IOException {
+		copy(to);
+		Files.walkFileTree(this.path, new DeleteVisitor());
 	}
 
-	/**
-	 * Copies the folder structure and all files to a folder, without depth restriction.<br>
-	 * Only consider records that are validated by the predicate<br>
-	 *
-	 * @param to
-	 * @param predicate
-	 * @throws IOException
-	 */
-
-	public void copy(Path to, Predicate<String> predicate) throws IOException {
-		CopyVisitor copyVisitor = new CopyVisitor(this.path, to);
-		copyVisitor.setPredicate(predicate);
-
-		Files.walkFileTree(this.path, copyVisitor);
-	}
-
-	/**
-	 * Copies the folder structure and all files to a folder, without depth restriction.<br>
-	 * Only consider records that are validated by the pattern (accepted pattern are : "regex:" or "glob:")<br>
-	 * <br>
-	 * See example of pattern here
-	 * {@link java.nio.file.FileSystem#getPathMatcher(String)}
-	 *
-	 * @param to
-	 * @param pattern
-	 * @throws IOException
-	 */
-
-	public void copy(Path to, String pattern) throws IOException {
-		CopyVisitor copyVisitor = new CopyVisitor(this.path, to);
-		copyVisitor.setPattern(pattern);
-
-		Files.walkFileTree(this.path, copyVisitor);
-	}
 
 	/**
 	 * Deletes all files and folders, including the initial folder.
@@ -123,7 +83,12 @@ public class DirBox {
 	 * @throws IOException
 	 */
 	public void delete() throws IOException {
-		Files.walkFileTree(this.path, new DeleteVisitor());
+		DeleteVisitor deleteVisitor = new DeleteVisitor();
+		deleteVisitor.setPredicate(this.predicate);
+		deleteVisitor.setPattern(this.pattern);
+		deleteVisitor.setType(this.type);
+
+		Files.walkFileTree(this.path, deleteVisitor);
 	}
 
 	/**
@@ -134,183 +99,31 @@ public class DirBox {
 	 */
 	public long folderSize() throws IOException {
 		SizeVisitor sizeVisitor = new SizeVisitor();
+		sizeVisitor.setPattern(this.pattern);
+		sizeVisitor.setPredicate(this.predicate);
+		sizeVisitor.setType(this.type);
 		Files.walkFileTree(this.path, sizeVisitor);
 
 		return sizeVisitor.getSize();
 	}
 
-	/**
-	 * give the size of folder, apply pattern filter (glob or regex)
-	 *
-	 * <br>
-	 * See example of pattern here
-	 * {@link java.nio.file.FileSystem#getPathMatcher(String)}
-	 *
-	 * @param pattern glob or regex
-	 * @return size
-	 * @throws IOException
-	 */
-	public long folderSize(String pattern) throws IOException {
-		SizeVisitor sizeVisitor = new SizeVisitor(pattern);
-		Files.walkFileTree(this.path, sizeVisitor);
-
-		return sizeVisitor.getSize();
-	}
 
 	/**
-	 * List only files in recursive structure
+	 * List paths depending option chosen
 	 *
 	 * @return list of path
-	 * @throws IOException
+	 * @throws IOException the exception :)
 	 */
 	public List<Path> list() throws IOException {
 		ListVisitor listVisitor = new ListVisitor();
-		Files.walkFileTree(this.path, listVisitor);
+
+		listVisitor.setPattern(this.pattern);
+		listVisitor.setPredicate(this.predicate);
+		listVisitor.setType(this.type);
+
+		Files.walkFileTree(this.path, Collections.emptySet(), this.maxDepth, listVisitor);
 
 		return listVisitor.getList();
-	}
-
-	public List<Path> list(Type type) throws IOException {
-		ListVisitor listVisitor = new ListVisitor();
-		listVisitor.setType(type);
-		Files.walkFileTree(this.path, listVisitor);
-
-		return listVisitor.getList();
-	}
-
-	/**
-	 * List only files in recursive structure
-	 *
-	 * @return list of path
-	 * @throws IOException
-	 */
-	public List<Path> list(int maxDepth) throws IOException {
-		ListVisitor listVisitor = new ListVisitor();
-		Files.walkFileTree(this.path, Collections.emptySet(), maxDepth, listVisitor);
-
-		return listVisitor.getList();
-	}
-
-
-	/**
-	 * List only files in recursive structure, apply predicate to filter
-	 *
-	 * @param predicate the predicate to filter path
-	 * @return list of path
-	 * @throws IOException
-	 */
-	public List<Path> list(Predicate<String> predicate) throws IOException {
-		ListVisitor listVisitor = new ListVisitor();
-		listVisitor.setPredicate(predicate);
-		Files.walkFileTree(this.path, listVisitor);
-
-		return listVisitor.getList();
-	}
-
-	/**
-	 * List only files in recursive structure, apply pattern filter (glob or regex)
-	 *
-	 * <br>
-	 * See example of pattern here
-	 * {@link java.nio.file.FileSystem#getPathMatcher(String)}
-	 *
-	 * @param pattern glob or regex
-	 * @return list of path
-	 * @throws IOException
-	 */
-	public List<Path> list(String pattern) throws IOException {
-		ListVisitor listVisitor = new ListVisitor();
-		listVisitor.setPattern(pattern);
-		Files.walkFileTree(this.path, listVisitor);
-
-		return listVisitor.getList();
-	}
-
-	/**
-	 * List only files in recursive structure, apply pattern filter (glob or regex) at a depth
-	 *
-	 * @param pattern  glob or regex
-	 * @param maxDepth the max depth
-	 * @return the list
-	 * @throws IOException Signals that an I/O exception has occurred.
-	 */
-	public List<Path> list(String pattern, int maxDepth) throws IOException {
-		ListVisitor listVisitor = new ListVisitor();
-		listVisitor.setPattern(pattern);
-		Files.walkFileTree(this.path, Collections.emptySet(), maxDepth, listVisitor);
-
-		return listVisitor.getList();
-	}
-
-	/**
-	 * List only files in recursive structure, apply predicate to filter
-	 *
-	 * @param predicate glob or regex
-	 * @param maxDepth  the max depth
-	 * @return the list
-	 * @throws IOException Signals that an I/O exception has occurred.
-	 */
-	public List<Path> list(Predicate<String> predicate, int maxDepth) throws IOException {
-		ListVisitor listVisitor = new ListVisitor();
-		listVisitor.setPredicate(predicate);
-		Files.walkFileTree(this.path, Collections.emptySet(), maxDepth, listVisitor);
-
-		return listVisitor.getList();
-	}
-
-	public List<Path> list(Type type, String pattern) throws IOException {
-		ListVisitor listVisitor = new ListVisitor();
-		listVisitor.setType(type);
-		listVisitor.setPattern(pattern);
-		Files.walkFileTree(this.path, listVisitor);
-
-		return listVisitor.getList();
-	}
-
-	public List<Path> list(Type type, Predicate<String> predicate) throws IOException {
-		ListVisitor listVisitor = new ListVisitor();
-		listVisitor.setType(type);
-		listVisitor.setPredicate(predicate);
-		Files.walkFileTree(this.path, listVisitor);
-
-		return listVisitor.getList();
-	}
-
-	public List<Path> list(Type type, int maxDepth) throws IOException {
-		ListVisitor listVisitor = new ListVisitor();
-		listVisitor.setType(type);
-		Files.walkFileTree(this.path, Collections.emptySet(), maxDepth, listVisitor);
-
-		return listVisitor.getList();
-	}
-
-	public List<Path> list(Type type, String pattern, int maxDepth) throws IOException {
-		ListVisitor listVisitor = new ListVisitor();
-		listVisitor.setType(type);
-		listVisitor.setPattern(pattern);
-		Files.walkFileTree(this.path, Collections.emptySet(), maxDepth, listVisitor);
-
-		return listVisitor.getList();
-	}
-
-	public List<Path> list(Type type, Predicate<String> predicate, int maxDepth) throws IOException {
-		ListVisitor listVisitor = new ListVisitor();
-		listVisitor.setType(type);
-		listVisitor.setPredicate(predicate);
-		Files.walkFileTree(this.path, Collections.emptySet(), maxDepth, listVisitor);
-
-		return listVisitor.getList();
-	}
-
-	/**
-	 * Moves a folder, all its sub-folders and files into a new folder
-	 *
-	 * @param to
-	 * @throws IOException
-	 */
-	public void move(Path to) throws IOException {
-		Files.walkFileTree(this.path, new CopyVisitor(this.path, to));
-		Files.walkFileTree(this.path, new DeleteVisitor());
 	}
 
 	/**
@@ -329,17 +142,28 @@ public class DirBox {
 	}
 
 	public void setPredicate(Predicate<String> predicate) {
+		this.predicate = predicate;
 	}
 
+	/**
+	 * See example of pattern here
+	 * {@link java.nio.file.FileSystem#getPathMatcher(String)}
+	 *
+	 * @param pattern
+	 */
 	public void setPattern(String pattern) {
+		this.pattern = pattern;
 	}
 
 	public void setType(Type type) {
+		this.type = type;
 	}
 
 	public void setMaxDepth(int maxDepth) {
+		this.maxDepth = maxDepth;
 	}
 
 	public void setKeepStructure(boolean keepStructure) {
+		this.keepStructure = keepStructure;
 	}
 }

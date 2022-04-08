@@ -1,13 +1,12 @@
 package com.nawak.dirbox.visitor;
 
+import com.nawak.dirbox.Type;
+
 import java.io.IOException;
-import java.nio.file.FileSystems;
-import java.nio.file.FileVisitResult;
-import java.nio.file.Path;
-import java.nio.file.PathMatcher;
-import java.nio.file.SimpleFileVisitor;
+import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Predicate;
 
 public class SizeVisitor extends SimpleFileVisitor<Path>
 {
@@ -21,22 +20,30 @@ public class SizeVisitor extends SimpleFileVisitor<Path>
 
 	public SizeVisitor(String pattern)
 	{
-		matcher = FileSystems.getDefault().getPathMatcher(pattern);
+		this.matcher = FileSystems.getDefault().getPathMatcher(pattern);
 	}
 
 	@Override
 	public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException
 	{
-		if (matcher.matches(file))
+		if (this.matcher.matches(file))
 		{
-			size.addAndGet(attrs.size());
+			this.size.addAndGet(attrs.size());
 		}
 
 		return FileVisitResult.CONTINUE;
 	}
 
-	public long getSize()
-	{
-		return size.get();
+	public long getSize() {
+		return this.size.get();
+	}
+
+	public void setPattern(String pattern) {
+	}
+
+	public void setPredicate(Predicate<String> predicate) {
+	}
+
+	public void setType(Type type) {
 	}
 }
